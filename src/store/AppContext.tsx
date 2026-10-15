@@ -218,6 +218,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'TOGGLE_ASSISTANT', payload: open });
   }, []);
 
+async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
+  try {
+    const res = await fetch(url, options);
+    // If dev server proxy returns 404 or isn't active, fallback to direct backend port 3001
+    if (res.status === 404 && url.startsWith('/api')) {
+      return await fetch(`http://localhost:3001${url}`, options);
+    }
+    return res;
+  } catch (err) {
+    if (url.startsWith('/api')) {
+      return await fetch(`http://localhost:3001${url}`, options);
+    }
+    throw err;
+  }
+}
+
   // Sync route estimates with backend (Google Routes API / cached / fallback)
   const syncRoutesWithGoogle = useCallback(async () => {
     dispatch({ type: 'SYNC_ROUTES_START' });
@@ -234,7 +250,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       });
 
-      const res = await fetch('/api/routes/estimate', {
+      const res = await apiFetch('/api/routes/estimate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ routes: routesPayload }),
@@ -367,7 +383,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             : undefined,
         };
 
-        const res = await fetch('/api/assistant/chat', {
+        const res = await apiFetch('/api/assistant/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: q, context }),
