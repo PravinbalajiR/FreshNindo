@@ -150,10 +150,19 @@ export async function computeRouteEstimate(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(
-        `[GoogleRoutes] Upstream error: HTTP ${response.status}`,
-        errorText.substring(0, 200)
-      );
+      let sanitizedDetail = `HTTP ${response.status}`;
+      try {
+        const parsedErr = JSON.parse(errorText);
+        if (parsedErr.error) {
+          const reason = parsedErr.error.details?.[0]?.reason || parsedErr.error.status || 'UNKNOWN';
+          const msg = parsedErr.error.message || 'Google Routes request failed';
+          sanitizedDetail = `${reason}: ${msg}`;
+        }
+      } catch {
+        sanitizedDetail = errorText.substring(0, 150).replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_KEY]');
+      }
+
+      console.warn(`[GoogleRoutes] Upstream rejection (HTTP ${response.status}): ${sanitizedDetail}`);
 
       const defaultHours = fallbackHours || 4.0;
       const defaultKm = fallbackKm || 180;
@@ -167,7 +176,7 @@ export async function computeRouteEstimate(
         isFallback: true,
         source: 'fallback',
         status: 'API_ERROR',
-        note: `Google Routes API returned HTTP ${response.status}. Using verified fallback data.`,
+        note: `Google Routes API rejected with HTTP ${response.status} (${sanitizedDetail}). Using verified fallback data.`,
       };
     }
 
