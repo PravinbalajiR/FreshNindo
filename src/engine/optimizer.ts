@@ -577,14 +577,17 @@ function computeDiscountRecommendations(
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export function generatePlans(
-  scenarioMods?: ScenarioModification[]
+  scenarioMods?: ScenarioModification[],
+  activeRoutes?: Route[]
 ): { baseline: Plan; optimized: Plan } {
   let batches = BATCHES.map((b) => ({ ...b }));
   let destinations = DESTINATIONS.map((d) => ({
     ...d,
     demand_by_commodity: { ...d.demand_by_commodity },
   }));
-  let routes = ROUTES.map((r) => ({ ...r }));
+  let routes = (activeRoutes && activeRoutes.length > 0 ? activeRoutes : ROUTES).map((r) => ({
+    ...r,
+  }));
 
   // Apply scenario modifications
   if (scenarioMods) {

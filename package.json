@@ -4,18 +4,30 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k -n \"CLIENT,SERVER\" -c \"cyan,magenta\" \"vite\" \"npx tsx server/index.ts\"",
+    "dev:client": "vite",
+    "dev:server": "npx tsx server/index.ts",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "npx tsx src/engine/acceptance-tests.ts"
+    "test": "npx tsx src/engine/acceptance-tests.ts",
+    "test:backend": "npx tsx server/tests/backend-tests.ts",
+    "test:all": "npx tsx src/engine/acceptance-tests.ts ; npx tsx server/tests/backend-tests.ts"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
   },
   "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
     "lucide-react": "^1.57.0",
     "recharts": "^3.10.1"
   }

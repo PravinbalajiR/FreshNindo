@@ -1,15 +1,22 @@
 // FreshRoute — Global Application Store
-// React context-based state management for the hackathon MVP.
+// State management with Google Routes sync and OpenRouter Qwen integration.
 
 import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useReducer,
 } from 'react';
 import { generatePlans, comparePlans } from '../engine/optimizer';
 import type { Plan, ComparisonResult, ScenarioModification } from '../types';
-import { ROUTES } from '../data/dataset';
+import {
+  ROUTES,
+  DESTINATIONS,
+  ORIGIN_COORDINATES,
+  type Route,
+  BATCHES,
+} from '../data/dataset';
 
 export type ActiveSection =
   | 'command'
@@ -19,8 +26,20 @@ export type ActiveSection =
   | 'scenario'
   | 'impact';
 
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  model?: string;
+  grounded?: boolean;
+  timestamp: string;
+}
+
 interface AppState {
   section: ActiveSection;
+  routes: Route[];
+  routesSource: 'google_routes' | 'cache' | 'fallback_synthetic';
+  isSyncingRoutes: boolean;
   baseline: Plan | null;
   optimized: Plan | null;
   comparison: ComparisonResult | null;
@@ -29,6 +48,10 @@ interface AppState {
   isGenerating: boolean;
   selectedBatchId: string | null;
   demoReset: number; // increment to trigger reset
+  // Assistant State
+  isAssistantOpen: boolean;
+  isAskingAssistant: boolean;
+  assistantMessages: ChatMessage[];
 }
 
 type Action =
@@ -42,7 +65,15 @@ type Action =
   | { type: 'SCENARIO_REPLAN'; payload: Plan }
   | { type: 'RESET_SCENARIO' }
   | { type: 'SELECT_BATCH'; payload: string | null }
-  | { type: 'RESET_DEMO' };
+  | { type: 'RESET_DEMO' }
+  | { type: 'SYNC_ROUTES_START' }
+  | {
+      type: 'SYNC_ROUTES_COMPLETE';
+      payload: { routes: Route[]; source: 'google_routes' | 'cache' | 'fallback_synthetic' };
+    }
+  | { type: 'TOGGLE_ASSISTANT'; payload?: boolean }
+  | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage }
+  | { type: 'SET_ASKING_ASSISTANT'; payload: boolean };
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -71,6 +102,28 @@ function reducer(state: AppState, action: Action): AppState {
         ...initialState,
         demoReset: state.demoReset + 1,
       };
+    case 'SYNC_ROUTES_START':
+      return { ...state, isSyncingRoutes: true };
+    case 'SYNC_ROUTES_COMPLETE':
+      return {
+        ...state,
+        isSyncingRoutes: false,
+        routes: action.payload.routes,
+        routesSource: action.payload.source,
+      };
+    case 'TOGGLE_ASSISTANT':
+      return {
+        ...state,
+        isAssistantOpen:
+          action.payload !== undefined ? action.payload : !state.isAssistantOpen,
+      };
+    case 'ADD_CHAT_MESSAGE':
+      return {
+        ...state,
+        assistantMessages: [...state.assistantMessages, action.payload],
+      };
+    case 'SET_ASKING_ASSISTANT':
+      return { ...state, isAskingAssistant: action.payload };
     default:
       return state;
   }
@@ -78,6 +131,9 @@ function reducer(state: AppState, action: Action): AppState {
 
 const initialState: AppState = {
   section: 'command',
+  routes: ROUTES,
+  routesSource: 'fallback_synthetic',
+  isSyncingRoutes: false,
   baseline: null,
   optimized: null,
   comparison: null,
@@ -86,6 +142,18 @@ const initialState: AppState = {
   isGenerating: false,
   selectedBatchId: null,
   demoReset: 0,
+  isAssistantOpen: false,
+  isAskingAssistant: false,
+  assistantMessages: [
+    {
+      id: 'welcome',
+      role: 'assistant',
+      text: 'Hello, I am the FreshRoute operational assistant powered by Qwen. Ask me about batch shelf-life urgency, destination allocations, economic comparisons, or active disruptions.',
+      model: 'qwen/qwen-2.5-72b-instruct',
+      grounded: true,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    },
+  ],
 };
 
 interface AppContextValue {
@@ -96,6 +164,9 @@ interface AppContextValue {
   resetScenario: () => void;
   selectBatch: (id: string | null) => void;
   resetDemo: () => void;
+  syncRoutesWithGoogle: () => Promise<void>;
+  toggleAssistant: (open?: boolean) => void;
+  askAssistantPrompt: (question: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -109,25 +180,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const generatePlan = useCallback(() => {
     dispatch({ type: 'GENERATE_START' });
-    // Use setTimeout so the loading state is visible briefly
     setTimeout(() => {
-      const { baseline, optimized } = generatePlans();
+      const { baseline, optimized } = generatePlans(undefined, state.routes);
       const comparison = comparePlans(baseline, optimized);
       dispatch({
         type: 'GENERATE_COMPLETE',
         payload: { baseline, optimized, comparison },
       });
-    }, 600);
-  }, []);
+    }, 400);
+  }, [state.routes]);
 
-  const applyScenario = useCallback((mods: ScenarioModification[]) => {
-    dispatch({ type: 'SET_SCENARIOS', payload: mods });
-    dispatch({ type: 'GENERATE_START' });
-    setTimeout(() => {
-      const { optimized } = generatePlans(mods);
-      dispatch({ type: 'SCENARIO_REPLAN', payload: optimized });
-    }, 800);
-  }, []);
+  const applyScenario = useCallback(
+    (mods: ScenarioModification[]) => {
+      dispatch({ type: 'SET_SCENARIOS', payload: mods });
+      dispatch({ type: 'GENERATE_START' });
+      setTimeout(() => {
+        const { optimized } = generatePlans(mods, state.routes);
+        dispatch({ type: 'SCENARIO_REPLAN', payload: optimized });
+      }, 500);
+    },
+    [state.routes]
+  );
 
   const resetScenario = useCallback(() => {
     dispatch({ type: 'RESET_SCENARIO' });
@@ -141,6 +214,203 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'RESET_DEMO' });
   }, []);
 
+  const toggleAssistant = useCallback((open?: boolean) => {
+    dispatch({ type: 'TOGGLE_ASSISTANT', payload: open });
+  }, []);
+
+  // Sync route estimates with backend (Google Routes API / cached / fallback)
+  const syncRoutesWithGoogle = useCallback(async () => {
+    dispatch({ type: 'SYNC_ROUTES_START' });
+
+    try {
+      const routesPayload = state.routes.map((r) => {
+        const dest = DESTINATIONS.find((d) => d.destination_id === r.destination_id);
+        return {
+          routeId: r.route_id,
+          origin: ORIGIN_COORDINATES,
+          destination: dest?.coordinates || { lat: 19.0, lng: 73.0 },
+          fallbackHours: r.travel_time_hours,
+          fallbackKm: r.distance_km || 150,
+        };
+      });
+
+      const res = await fetch('/api/routes/estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ routes: routesPayload }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Route estimate API error HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      let detectedSource: 'google_routes' | 'cache' | 'fallback_synthetic' = 'fallback_synthetic';
+
+      const updatedRoutes = state.routes.map((r) => {
+        const est = (data.routes || []).find((item: any) => item.routeId === r.route_id);
+        if (est) {
+          if (est.source === 'google_routes') detectedSource = 'google_routes';
+          else if (est.source === 'cache' && detectedSource !== 'google_routes') detectedSource = 'cache';
+
+          return {
+            ...r,
+            travel_time_hours: est.durationHours || r.travel_time_hours,
+            distance_km: est.distanceKm || r.distance_km,
+            duration_formatted: est.durationFormatted || r.duration_formatted,
+            encoded_polyline: est.encodedPolyline,
+            is_live_google: !est.isFallback,
+            route_source: est.source === 'google_routes' ? 'google_routes' : est.source === 'cache' ? 'cache' : 'fallback_synthetic',
+          } as Route;
+        }
+        return r;
+      });
+
+      dispatch({
+        type: 'SYNC_ROUTES_COMPLETE',
+        payload: { routes: updatedRoutes, source: detectedSource },
+      });
+
+      // Recalculate plan with the freshly synchronized route durations
+      const { baseline, optimized } = generatePlans(
+        state.scenarios.length > 0 ? state.scenarios : undefined,
+        updatedRoutes
+      );
+      const comparison = comparePlans(baseline, optimized);
+      dispatch({
+        type: 'GENERATE_COMPLETE',
+        payload: { baseline, optimized, comparison },
+      });
+    } catch (err) {
+      console.warn('[AppContext] syncRoutesWithGoogle failed; retaining fallback routes:', err);
+      dispatch({
+        type: 'SYNC_ROUTES_COMPLETE',
+        payload: { routes: state.routes, source: 'fallback_synthetic' },
+      });
+    }
+  }, [state.routes, state.scenarios]);
+
+  // Ask Qwen Assistant with full operational context
+  const askAssistantPrompt = useCallback(
+    async (question: string) => {
+      const q = question.trim();
+      if (!q) return;
+
+      const userMsg: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        text: q,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: userMsg });
+      dispatch({ type: 'SET_ASKING_ASSISTANT', payload: true });
+
+      try {
+        const currentPlan = state.scenarioPlan || state.optimized;
+
+        const context = {
+          planSummary: currentPlan
+            ? {
+                totalAllocatedKg: currentPlan.metrics.total_allocated_kg,
+                fulfilledDemandKg: currentPlan.metrics.fulfilled_demand_kg,
+                fulfillmentRatePct: currentPlan.metrics.fulfillment_rate * 100,
+                grossRevenue: currentPlan.metrics.gross_revenue,
+                netRevenue: currentPlan.metrics.net_revenue,
+                transportCost: currentPlan.metrics.total_transport_cost,
+                estimatedSpoilageKg: currentPlan.metrics.estimated_spoilage_kg,
+                feasibilityViolations: currentPlan.metrics.feasibility_violations,
+              }
+            : undefined,
+          activeScenario: {
+            active: !!state.scenarioPlan,
+            name: state.scenarios[0]?.description || 'Custom Scenario',
+            description: state.scenarios.map((s) => s.description).join('; '),
+          },
+          batches: BATCHES.map((b) => ({
+            batch_id: b.batch_id,
+            commodity: b.commodity,
+            quantity_kg: b.quantity_kg,
+            remaining_shelf_life_hours: b.remaining_shelf_life_hours,
+            acquisition_cost_per_kg: b.acquisition_cost_per_kg,
+            quality_grade: b.quality_grade,
+          })),
+          destinations: DESTINATIONS.map((d) => ({
+            destination_id: d.destination_id,
+            name: d.name,
+            handling_time_hours: d.handling_time_hours,
+            capacity_kg: d.capacity_kg,
+          })),
+          allocations: currentPlan?.allocations.slice(0, 10).map((a) => ({
+            batch_id: a.batch.batch_id,
+            commodity: a.batch.commodity,
+            destination_name: a.destination.name,
+            quantity_kg: a.quantity_kg,
+            margin_hours: a.feasibility.usable_margin_hours,
+            feasibility_status: a.feasibility.status,
+            net_revenue_contribution: a.net_revenue_contribution,
+            dispatch_priority: a.dispatch_priority,
+            why_destination: a.explanation.why_this_destination,
+          })),
+          discounts: currentPlan?.metrics.discount_recommendations.map((d) => ({
+            batch_id: d.batch.batch_id,
+            commodity: d.batch.commodity,
+            quantity_at_risk_kg: d.quantity_at_risk_kg,
+            recommended_discount_pct: d.recommended_discount_pct,
+            discounted_price_per_kg: d.discounted_price_per_kg,
+          })),
+          comparison: state.comparison
+            ? {
+                netRevenueDelta: state.comparison.net_revenue_diff,
+                spoilageDeltaKg: state.comparison.spoilage_diff_kg,
+                fulfillmentDeltaKg: state.comparison.fulfillment_diff_kg,
+              }
+            : undefined,
+        };
+
+        const res = await fetch('/api/assistant/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: q, context }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`Assistant error HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        const assistantMsg: ChatMessage = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          text: data.reply || 'No response returned.',
+          model: data.model || 'qwen/qwen-2.5-72b-instruct',
+          grounded: data.grounded ?? true,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+        dispatch({ type: 'ADD_CHAT_MESSAGE', payload: assistantMsg });
+      } catch (err: any) {
+        console.error('[AppContext] askAssistantPrompt error:', err);
+        const errorMsg: ChatMessage = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          text: `Operational assistant query failed (${err.message || 'connection issue'}). The application optimizer and dispatch views remain fully operational.`,
+          model: 'fallback-error',
+          grounded: true,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+        dispatch({ type: 'ADD_CHAT_MESSAGE', payload: errorMsg });
+      } finally {
+        dispatch({ type: 'SET_ASKING_ASSISTANT', payload: false });
+      }
+    },
+    [state.optimized, state.scenarioPlan, state.scenarios, state.comparison]
+  );
+
+  // Sync routes on mount if backend is reachable
+  useEffect(() => {
+    syncRoutesWithGoogle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -151,6 +421,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         resetScenario,
         selectBatch,
         resetDemo,
+        syncRoutesWithGoogle,
+        toggleAssistant,
+        askAssistantPrompt,
       }}
     >
       {children}

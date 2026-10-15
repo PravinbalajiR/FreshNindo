@@ -22,6 +22,10 @@ export interface Destination {
   handling_time_hours: number;
   capacity_kg: number; // total fresh produce capacity at this destination
   region: string;
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
 }
 
 export interface Route {
@@ -32,9 +36,18 @@ export interface Route {
   transport_cost_per_kg: number; // INR/kg
   vehicle_capacity_kg: number;
   available: boolean;
+  distance_km?: number;
+  duration_formatted?: string;
+  encoded_polyline?: string;
+  is_live_google?: boolean;
+  route_source?: 'google_routes' | 'cache' | 'fallback_synthetic';
 }
 
 export const ORIGIN = 'Nashik Distribution Centre';
+export const ORIGIN_COORDINATES = {
+  lat: 19.9975,
+  lng: 73.7898,
+};
 
 export const BATCHES: InventoryBatch[] = [
   {
@@ -114,6 +127,7 @@ export const DESTINATIONS: Destination[] = [
     handling_time_hours: 2,
     capacity_kg: 1500,
     region: 'Mumbai',
+    coordinates: { lat: 19.076, lng: 72.8777 },
   },
   {
     destination_id: 'D-PUN',
@@ -135,6 +149,7 @@ export const DESTINATIONS: Destination[] = [
     handling_time_hours: 1.5,
     capacity_kg: 1200,
     region: 'Pune',
+    coordinates: { lat: 18.5204, lng: 73.8567 },
   },
   {
     destination_id: 'D-AUR',
@@ -156,6 +171,7 @@ export const DESTINATIONS: Destination[] = [
     handling_time_hours: 1,
     capacity_kg: 800,
     region: 'Aurangabad',
+    coordinates: { lat: 19.8762, lng: 75.3433 },
   },
   {
     destination_id: 'D-NAS-LOCAL',
@@ -177,6 +193,7 @@ export const DESTINATIONS: Destination[] = [
     handling_time_hours: 0.5,
     capacity_kg: 600,
     region: 'Nashik',
+    coordinates: { lat: 20.0125, lng: 73.791 },
   },
 ];
 
@@ -189,6 +206,10 @@ export const ROUTES: Route[] = [
     transport_cost_per_kg: 2.5,
     vehicle_capacity_kg: 1000,
     available: true,
+    distance_km: 168,
+    duration_formatted: '6h 0m',
+    is_live_google: false,
+    route_source: 'fallback_synthetic',
   },
   {
     route_id: 'R-NAS-PUN',
@@ -198,6 +219,10 @@ export const ROUTES: Route[] = [
     transport_cost_per_kg: 1.8,
     vehicle_capacity_kg: 800,
     available: true,
+    distance_km: 210,
+    duration_formatted: '3h 30m',
+    is_live_google: false,
+    route_source: 'fallback_synthetic',
   },
   {
     route_id: 'R-NAS-AUR',
@@ -207,6 +232,10 @@ export const ROUTES: Route[] = [
     transport_cost_per_kg: 2.0,
     vehicle_capacity_kg: 600,
     available: true,
+    distance_km: 195,
+    duration_formatted: '5h 0m',
+    is_live_google: false,
+    route_source: 'fallback_synthetic',
   },
   {
     route_id: 'R-NAS-LOCAL',
@@ -216,6 +245,10 @@ export const ROUTES: Route[] = [
     transport_cost_per_kg: 0.3,
     vehicle_capacity_kg: 400,
     available: true,
+    distance_km: 15,
+    duration_formatted: '0h 30m',
+    is_live_google: false,
+    route_source: 'fallback_synthetic',
   },
 ];
 

@@ -1,109 +1,17 @@
 // FreshRoute — Destinations Section
-// Demand, market context, route schematic, and fulfillment tracking.
+// Demand, market context, interactive Google Map, and fulfillment tracking.
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { DESTINATIONS, ROUTES, BATCHES } from '../data/dataset';
+import { DESTINATIONS, BATCHES } from '../data/dataset';
 import { formatKg, formatINR } from './shared';
-
-const RouteSchematic: React.FC = () => {
-  return (
-    <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
-      <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>
-        Route Network — {ROUTES[0]?.origin ?? 'Origin'}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-6)', overflowX: 'auto', padding: 'var(--space-3) 0' }}>
-        {/* Origin node */}
-        <div style={{ textAlign: 'center', flexShrink: 0 }}>
-          <div
-            style={{
-              width: 80,
-              height: 80,
-              borderRadius: '50%',
-              background: 'var(--accent)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 8px',
-              fontSize: 28,
-            }}
-          >
-            🏭
-          </div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', maxWidth: 100 }}>
-            Nashik DC
-          </div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Origin</div>
-        </div>
-
-        {/* Routes to destinations */}
-        {ROUTES.map((route) => {
-          const dest = DESTINATIONS.find((d) => d.destination_id === route.destination_id)!;
-          return (
-            <React.Fragment key={route.route_id}>
-              {/* Arrow + route info */}
-              <div style={{ textAlign: 'center', flexShrink: 0 }}>
-                <div
-                  style={{
-                    fontSize: 10,
-                    color: route.available ? 'var(--text-muted)' : 'var(--danger-text)',
-                    marginBottom: 4,
-                  }}
-                >
-                  {route.available ? '─────' : '· · · ·'} {route.travel_time_hours}h
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--text-subtle)' }}>
-                  ₹{route.transport_cost_per_kg}/kg
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--text-subtle)' }}>
-                  Cap: {formatKg(route.vehicle_capacity_kg)}
-                </div>
-                {!route.available && (
-                  <div className="status-badge status-infeasible" style={{ fontSize: 9, marginTop: 4 }}>
-                    Unavailable
-                  </div>
-                )}
-              </div>
-
-              {/* Destination node */}
-              <div style={{ textAlign: 'center', flexShrink: 0 }}>
-                <div
-                  style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: '50%',
-                    background: route.available ? 'var(--surface-3)' : 'var(--surface)',
-                    border: `2px solid ${route.available ? 'var(--border-strong)' : 'var(--danger)'}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    margin: '0 auto 8px',
-                    fontSize: 22,
-                  }}
-                >
-                  🏪
-                </div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', maxWidth: 90 }}>
-                  {dest.name}
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                  Cap: {formatKg(dest.capacity_kg)}
-                </div>
-              </div>
-            </React.Fragment>
-          );
-        })}
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--text-subtle)', marginTop: 'var(--space-3)' }}>
-        ⓘ Schematic only. Travel times and costs are from the synthetic dataset. No real geographic data is used.
-      </div>
-    </div>
-  );
-};
+import { GoogleMapView } from './GoogleMapView';
 
 export const DestinationsSection: React.FC = () => {
-  const { state } = useApp();
-  const plan = state.optimized;
+  const { state, syncRoutesWithGoogle } = useApp();
+  const [selectedDestId, setSelectedDestId] = useState<string | null>(null);
+
+  const plan = state.scenarioPlan || state.optimized;
 
   // Compute allocated + remaining demand per destination per commodity
   const allocatedByDest = useMemo(() => {
@@ -125,15 +33,53 @@ export const DestinationsSection: React.FC = () => {
   return (
     <div className="page-wrapper">
       <div className="page-header">
-        <h1 className="page-title">Destinations</h1>
-        <p className="page-subtitle">
-          {DESTINATIONS.length} markets · Demand, pricing, and fulfillment status ·{' '}
-          <span className="data-badge" style={{ verticalAlign: 'middle' }}>⚠ Synthetic Demo Data</span>
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h1 className="page-title">Destinations & Transit Network</h1>
+            <p className="page-subtitle">
+              {DESTINATIONS.length} regional markets · Demand, pricing, and live corridor fulfillment
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <span
+              className={`status-badge ${
+                state.routesSource === 'google_routes'
+                  ? 'status-ready'
+                  : 'status-time-sensitive'
+              }`}
+            >
+              {state.routesSource === 'google_routes'
+                ? '● Google Routes API Active'
+                : state.routesSource === 'cache'
+                ? '● Cached Routes'
+                : '⚠ Fallback Routing'}
+            </span>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => syncRoutesWithGoogle()}
+              disabled={state.isSyncingRoutes}
+            >
+              {state.isSyncingRoutes ? (
+                <>
+                  <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
+                  Syncing…
+                </>
+              ) : (
+                '↻ Sync Route Estimates'
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Route schematic */}
-      <RouteSchematic />
+      {/* Interactive Google Map with Route Highlighting */}
+      <GoogleMapView
+        routes={state.routes}
+        selectedDestId={selectedDestId}
+        onSelectDest={setSelectedDestId}
+        routesSource={state.routesSource}
+      />
 
       {/* Destination cards */}
       <div
@@ -144,17 +90,24 @@ export const DestinationsSection: React.FC = () => {
         }}
       >
         {DESTINATIONS.map((dest, idx) => {
-          const route = ROUTES.find((r) => r.destination_id === dest.destination_id);
+          const route = state.routes.find((r) => r.destination_id === dest.destination_id);
           const allocatedHere = allocatedByDest[dest.destination_id] ?? {};
           const totalAllocated = Object.values(allocatedHere).reduce((s, v) => s + v, 0);
           const totalDemand = Object.values(dest.demand_by_commodity).reduce((s, v) => s + v, 0);
           const fillRate = totalDemand > 0 ? totalAllocated / totalDemand : 0;
+          const isSelected = selectedDestId === dest.destination_id;
 
           return (
             <div
               key={dest.destination_id}
-              className="card anim-fade-up"
-              style={{ animationDelay: `${idx * 60}ms` }}
+              className={`card anim-fade-up ${isSelected ? 'selected' : ''}`}
+              style={{
+                animationDelay: `${idx * 60}ms`,
+                borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
+                boxShadow: isSelected ? '0 0 16px rgba(0,102,204,0.3)' : undefined,
+                cursor: 'pointer',
+              }}
+              onClick={() => setSelectedDestId(isSelected ? null : dest.destination_id)}
             >
               {/* Dest header */}
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
@@ -188,18 +141,25 @@ export const DestinationsSection: React.FC = () => {
                     padding: 'var(--space-3) var(--space-4)',
                     marginBottom: 'var(--space-4)',
                     fontSize: 13,
+                    flexWrap: 'wrap',
                   }}
                 >
                   <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Travel: </span>
-                    <span style={{ fontWeight: 700 }}>{route.travel_time_hours}h</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Distance: </span>
+                    <span style={{ fontWeight: 700 }}>{route.distance_km || '—'} km</span>
                   </div>
                   <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Transport: </span>
+                    <span style={{ color: 'var(--text-muted)' }}>Transit: </span>
+                    <span style={{ fontWeight: 700, color: 'var(--accent-light)' }}>
+                      {route.duration_formatted || `${route.travel_time_hours}h`}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Cost: </span>
                     <span style={{ fontWeight: 700 }}>₹{route.transport_cost_per_kg}/kg</span>
                   </div>
                   <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Vehicle cap: </span>
+                    <span style={{ color: 'var(--text-muted)' }}>Cap: </span>
                     <span style={{ fontWeight: 700 }}>{formatKg(route.vehicle_capacity_kg)}</span>
                   </div>
                 </div>

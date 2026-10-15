@@ -7,6 +7,7 @@ import { InventorySection } from './components/InventorySection';
 import { DestinationsSection } from './components/DestinationsSection';
 import { ImpactSection } from './components/ImpactSection';
 import { ScenarioSection } from './components/ScenarioSection';
+import { AssistantDrawer } from './components/AssistantDrawer';
 import './styles/design-system.css';
 
 const NAV_ITEMS: {
@@ -96,6 +97,9 @@ function AppShell() {
         {currentSection === 'scenario' && <ScenarioSection />}
         {currentSection === 'impact' && <ImpactSection />}
       </main>
+
+      {/* Floating Operational Decision Assistant */}
+      <AssistantDrawer />
     </div>
   );
 }
