@@ -4,7 +4,6 @@
 import React from 'react';
 import { useApp } from '../store/AppContext';
 import { EmptyState, DiffChip, formatINR, formatKg, formatPct, Spinner } from './shared';
-import { BATCHES, DESTINATIONS, ROUTES } from '../data/dataset';
 import {
   BarChart,
   Bar,
@@ -260,7 +259,7 @@ export const ImpactSection: React.FC = () => {
       <div className="card" style={{ borderLeft: '3px solid var(--warning-text)' }}>
         <div className="card-title" style={{ color: 'var(--warning-text)' }}>Methodology Disclosures</div>
         <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.7 }}>
-          <p>• Both plans use identical input data: {BATCHES.length} batches, {4} destinations, {4} routes.</p>
+          <p>• Both plans use identical input data: {state.batches.length} batches, {state.routes.length} destinations, {state.routes.length} routes.</p>
           <p>• Net revenue = gross revenue − acquisition cost − transport cost. No double-counting.</p>
           <p>• Spoilage estimates apply only to batches with ≤24h remaining shelf life and unallocated residual. Unsold ≠ spoiled for stable batches.</p>
           <p>• The optimized plan uses a greedy heuristic (economic-urgency scoring) — <strong>not a proven mathematical optimum</strong>.</p>

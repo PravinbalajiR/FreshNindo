@@ -6,6 +6,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useReducer,
 } from 'react';
 import { generatePlans, comparePlans } from '../engine/optimizer';
@@ -15,16 +16,61 @@ import {
   DESTINATIONS,
   ORIGIN_COORDINATES,
   type Route,
+  type Destination,
+  type InventoryBatch,
+  type RetailerOrder,
   BATCHES,
 } from '../data/dataset';
+import { MOCK_USERS, SEED_BATCH_OWNERS, type MockUser } from '../data/users';
+import { withOrderDemand } from '../engine/supplyChain';
 
 export type ActiveSection =
+  // Manager
   | 'command'
   | 'dispatch'
   | 'inventory'
   | 'destinations'
   | 'scenario'
-  | 'impact';
+  | 'impact'
+  // Farmer
+  | 'farmer-home'
+  | 'farmer-add'
+  | 'farmer-routes'
+  // Retailer
+  | 'retailer-home'
+  | 'retailer-order'
+  | 'retailer-track';
+
+export const HOME_SECTION: Record<MockUser['role'], ActiveSection> = {
+  farmer: 'farmer-home',
+  retailer: 'retailer-home',
+  manager: 'command',
+};
+
+const SEED_BATCHES: InventoryBatch[] = BATCHES.map((b) => ({ ...b, farmer_id: SEED_BATCH_OWNERS[b.batch_id] }));
+
+const SEED_ORDERS: RetailerOrder[] = [
+  { order_id: 'O-1001', retailer_id: 'R-01', destination_id: 'D-MUM', commodity: 'Grapes', quantity_kg: 60, max_price_per_kg: 115, created_at: '2026-10-15T05:30:00.000Z' },
+  { order_id: 'O-1002', retailer_id: 'R-02', destination_id: 'D-PUN', commodity: 'Tomatoes', quantity_kg: 120, max_price_per_kg: 26, created_at: '2026-10-15T06:10:00.000Z' },
+  { order_id: 'O-1003', retailer_id: 'R-02', destination_id: 'D-PUN', commodity: 'Spinach', quantity_kg: 40, created_at: '2026-10-15T06:45:00.000Z' },
+];
+
+const STORAGE_KEY = 'freshroute.session.v1';
+
+interface PersistedState {
+  userId: string | null;
+  batches: InventoryBatch[];
+  orders: RetailerOrder[];
+}
+
+function loadPersisted(): PersistedState | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as PersistedState) : null;
+  } catch {
+    return null;
+  }
+}
 
 export interface ChatMessage {
   id: string;
@@ -36,6 +82,9 @@ export interface ChatMessage {
 }
 
 interface AppState {
+  user: MockUser | null;
+  batches: InventoryBatch[];
+  orders: RetailerOrder[];
   section: ActiveSection;
   routes: Route[];
   routesSource: 'google_routes' | 'cache' | 'fallback_synthetic';
@@ -55,6 +104,12 @@ interface AppState {
 }
 
 type Action =
+  | { type: 'LOGIN'; payload: MockUser }
+  | { type: 'LOGOUT' }
+  | { type: 'ADD_BATCH'; payload: InventoryBatch }
+  | { type: 'REMOVE_BATCH'; payload: string }
+  | { type: 'ADD_ORDER'; payload: RetailerOrder }
+  | { type: 'CANCEL_ORDER'; payload: string }
   | { type: 'SET_SECTION'; payload: ActiveSection }
   | { type: 'GENERATE_START' }
   | {
@@ -77,6 +132,18 @@ type Action =
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case 'LOGIN':
+      return { ...state, user: action.payload, section: HOME_SECTION[action.payload.role] };
+    case 'LOGOUT':
+      return { ...state, user: null, isAssistantOpen: false };
+    case 'ADD_BATCH':
+      return { ...state, batches: [...state.batches, action.payload] };
+    case 'REMOVE_BATCH':
+      return { ...state, batches: state.batches.filter((b) => b.batch_id !== action.payload) };
+    case 'ADD_ORDER':
+      return { ...state, orders: [...state.orders, action.payload] };
+    case 'CANCEL_ORDER':
+      return { ...state, orders: state.orders.filter((o) => o.order_id !== action.payload) };
     case 'SET_SECTION':
       return { ...state, section: action.payload };
     case 'GENERATE_START':
@@ -100,6 +167,8 @@ function reducer(state: AppState, action: Action): AppState {
     case 'RESET_DEMO':
       return {
         ...initialState,
+        user: state.user,
+        section: state.user ? HOME_SECTION[state.user.role] : initialState.section,
         demoReset: state.demoReset + 1,
       };
     case 'SYNC_ROUTES_START':
@@ -130,6 +199,9 @@ function reducer(state: AppState, action: Action): AppState {
 }
 
 const initialState: AppState = {
+  user: null,
+  batches: SEED_BATCHES,
+  orders: SEED_ORDERS,
   section: 'command',
   routes: ROUTES,
   routesSource: 'fallback_synthetic',
@@ -158,6 +230,14 @@ const initialState: AppState = {
 
 interface AppContextValue {
   state: AppState;
+  /** Market demand including retailer orders — what the optimizer plans against. */
+  destinations: Destination[];
+  login: (user: MockUser) => void;
+  logout: () => void;
+  addBatch: (b: Omit<InventoryBatch, 'batch_id' | 'added_at'>) => InventoryBatch;
+  removeBatch: (id: string) => void;
+  addOrder: (o: Omit<RetailerOrder, 'order_id' | 'created_at'>) => RetailerOrder;
+  cancelOrder: (id: string) => void;
   navigate: (section: ActiveSection) => void;
   generatePlan: () => void;
   applyScenario: (mods: ScenarioModification[]) => void;
@@ -172,7 +252,59 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(reducer, initialState, (init): AppState => {
+    const saved = loadPersisted();
+    if (!saved) return init;
+    const user = MOCK_USERS.find((u) => u.id === saved.userId) ?? null;
+    return {
+      ...init,
+      user,
+      section: user ? HOME_SECTION[user.role] : init.section,
+      batches: Array.isArray(saved.batches) && saved.batches.length ? saved.batches : init.batches,
+      orders: Array.isArray(saved.orders) ? saved.orders : init.orders,
+    };
+  });
+
+  useEffect(() => {
+    try {
+      const data: PersistedState = { userId: state.user?.id ?? null, batches: state.batches, orders: state.orders };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      /* storage unavailable: the session just won't survive a refresh */
+    }
+  }, [state.user, state.batches, state.orders]);
+
+  const destinations = useMemo(() => withOrderDemand(DESTINATIONS, state.orders), [state.orders]);
+  const planInputs = useMemo(() => ({ batches: state.batches, destinations }), [state.batches, destinations]);
+
+  const login = useCallback((user: MockUser) => dispatch({ type: 'LOGIN', payload: user }), []);
+  const logout = useCallback(() => dispatch({ type: 'LOGOUT' }), []);
+
+  const addBatch = useCallback(
+    (b: Omit<InventoryBatch, 'batch_id' | 'added_at'>) => {
+      const maxId = state.batches.reduce((m, x) => Math.max(m, parseInt(x.batch_id.replace(/\D/g, ''), 10) || 0), 0);
+      const batch: InventoryBatch = {
+        ...b,
+        batch_id: `B-${String(maxId + 1).padStart(3, '0')}`,
+        added_at: new Date().toISOString(),
+      };
+      dispatch({ type: 'ADD_BATCH', payload: batch });
+      return batch;
+    },
+    [state.batches]
+  );
+  const removeBatch = useCallback((id: string) => dispatch({ type: 'REMOVE_BATCH', payload: id }), []);
+
+  const addOrder = useCallback(
+    (o: Omit<RetailerOrder, 'order_id' | 'created_at'>) => {
+      const maxId = state.orders.reduce((m, x) => Math.max(m, parseInt(x.order_id.replace(/\D/g, ''), 10) || 0), 1000);
+      const order: RetailerOrder = { ...o, order_id: `O-${maxId + 1}`, created_at: new Date().toISOString() };
+      dispatch({ type: 'ADD_ORDER', payload: order });
+      return order;
+    },
+    [state.orders]
+  );
+  const cancelOrder = useCallback((id: string) => dispatch({ type: 'CANCEL_ORDER', payload: id }), []);
 
   const navigate = useCallback((section: ActiveSection) => {
     dispatch({ type: 'SET_SECTION', payload: section });
@@ -181,25 +313,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const generatePlan = useCallback(() => {
     dispatch({ type: 'GENERATE_START' });
     setTimeout(() => {
-      const { baseline, optimized } = generatePlans(undefined, state.routes);
+      const { baseline, optimized } = generatePlans(undefined, state.routes, planInputs);
       const comparison = comparePlans(baseline, optimized);
       dispatch({
         type: 'GENERATE_COMPLETE',
         payload: { baseline, optimized, comparison },
       });
+      // Keep an active what-if scenario in step with new stock and orders
+      if (state.scenarios.length > 0) {
+        dispatch({ type: 'SCENARIO_REPLAN', payload: generatePlans(state.scenarios, state.routes, planInputs).optimized });
+      }
     }, 400);
-  }, [state.routes]);
+  }, [state.routes, state.scenarios, planInputs]);
 
   const applyScenario = useCallback(
     (mods: ScenarioModification[]) => {
       dispatch({ type: 'SET_SCENARIOS', payload: mods });
       dispatch({ type: 'GENERATE_START' });
       setTimeout(() => {
-        const { optimized } = generatePlans(mods, state.routes);
+        const { optimized } = generatePlans(mods, state.routes, planInputs);
         dispatch({ type: 'SCENARIO_REPLAN', payload: optimized });
       }, 500);
     },
-    [state.routes]
+    [state.routes, planInputs]
   );
 
   const resetScenario = useCallback(() => {
@@ -290,7 +426,8 @@ async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
       // Recalculate plan with the freshly synchronized route durations
       const { baseline, optimized } = generatePlans(
         state.scenarios.length > 0 ? state.scenarios : undefined,
-        updatedRoutes
+        updatedRoutes,
+        planInputs
       );
       const comparison = comparePlans(baseline, optimized);
       dispatch({
@@ -304,7 +441,7 @@ async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
         payload: { routes: state.routes, source: 'fallback_synthetic' },
       });
     }
-  }, [state.routes, state.scenarios]);
+  }, [state.routes, state.scenarios, planInputs]);
 
   // Ask Qwen Assistant with full operational context
   const askAssistantPrompt = useCallback(
@@ -342,7 +479,7 @@ async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
             name: state.scenarios[0]?.description || 'Custom Scenario',
             description: state.scenarios.map((s) => s.description).join('; '),
           },
-          batches: BATCHES.map((b) => ({
+          batches: state.batches.map((b) => ({
             batch_id: b.batch_id,
             commodity: b.commodity,
             quantity_kg: b.quantity_kg,
@@ -350,7 +487,7 @@ async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
             acquisition_cost_per_kg: b.acquisition_cost_per_kg,
             quality_grade: b.quality_grade,
           })),
-          destinations: DESTINATIONS.map((d) => ({
+          destinations: destinations.map((d) => ({
             destination_id: d.destination_id,
             name: d.name,
             handling_time_hours: d.handling_time_hours,
@@ -418,7 +555,7 @@ async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
         dispatch({ type: 'SET_ASKING_ASSISTANT', payload: false });
       }
     },
-    [state.optimized, state.scenarioPlan, state.scenarios, state.comparison]
+    [state.optimized, state.scenarioPlan, state.scenarios, state.comparison, state.batches, destinations]
   );
 
   // Sync routes on mount if backend is reachable
@@ -431,6 +568,13 @@ async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
     <AppContext.Provider
       value={{
         state,
+        destinations,
+        login,
+        logout,
+        addBatch,
+        removeBatch,
+        addOrder,
+        cancelOrder,
         navigate,
         generatePlan,
         applyScenario,

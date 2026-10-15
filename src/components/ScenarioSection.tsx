@@ -96,7 +96,7 @@ const ScenarioResultComparison: React.FC = () => {
         const isGood = row.goodIfPositive ? row.delta >= 0 : row.delta <= 0;
         const isNeutral = Math.abs(row.delta) < 0.01;
         return (
-          <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 80px', gap: 'var(--space-4)', padding: 'var(--space-3) 0', borderBottom: '1px solid rgba(255,255,255,0.04)', alignItems: 'center' }}>
+          <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 80px', gap: 'var(--space-4)', padding: 'var(--space-3) 0', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
             <span style={{ fontSize: 12.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', fontWeight: 600 }}>{row.label}</span>
             <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: 'var(--text-secondary)' }}>{row.base}</span>
             <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: 'var(--warning-text)' }}>{row.scenario}</span>
@@ -151,7 +151,7 @@ const ScenarioResultComparison: React.FC = () => {
         )}
 
         {scenarioPlan.unallocated_batches.length > 0 && (
-          <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-4)', background: 'var(--danger-bg)', borderRadius: 'var(--radius)', border: '1px solid rgba(255,69,58,0.2)' }}>
+          <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-4)', background: 'var(--danger-bg)', borderRadius: 'var(--radius)', border: '1px solid rgba(255,59,48,0.25)' }}>
             <div style={{ fontWeight: 700, fontSize: 12.5, color: 'var(--danger-text)', marginBottom: 'var(--space-2)' }}>
               Newly Unallocated ({scenarioPlan.unallocated_batches.length})
             </div>

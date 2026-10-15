@@ -578,12 +578,14 @@ function computeDiscountRecommendations(
 
 export function generatePlans(
   scenarioMods?: ScenarioModification[],
-  activeRoutes?: Route[]
+  activeRoutes?: Route[],
+  inputs?: { batches?: InventoryBatch[]; destinations?: Destination[] }
 ): { baseline: Plan; optimized: Plan } {
-  let batches = BATCHES.map((b) => ({ ...b }));
-  let destinations = DESTINATIONS.map((d) => ({
+  let batches = (inputs?.batches ?? BATCHES).map((b) => ({ ...b }));
+  let destinations = (inputs?.destinations ?? DESTINATIONS).map((d) => ({
     ...d,
     demand_by_commodity: { ...d.demand_by_commodity },
+    selling_price_by_commodity: { ...d.selling_price_by_commodity },
   }));
   let routes = (activeRoutes && activeRoutes.length > 0 ? activeRoutes : ROUTES).map((r) => ({
     ...r,

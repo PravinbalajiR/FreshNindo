@@ -48,7 +48,7 @@ export const AssistantDrawer: React.FC = () => {
           right: 24,
           borderRadius: 999,
           padding: '12px 20px',
-          boxShadow: '0 8px 24px rgba(0, 102, 204, 0.45)',
+          boxShadow: '0 8px 24px rgba(0, 113, 227, 0.3)',
           zIndex: 100,
           display: 'flex',
           alignItems: 'center',
@@ -87,7 +87,7 @@ export const AssistantDrawer: React.FC = () => {
         background: 'var(--surface)',
         border: '1px solid var(--border-strong)',
         borderRadius: 'var(--radius-xl)',
-        boxShadow: '0 16px 48px rgba(0,0,0,0.7)',
+        boxShadow: 'var(--shadow-modal)',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 100,
@@ -116,7 +116,7 @@ export const AssistantDrawer: React.FC = () => {
               style={{
                 fontSize: 10,
                 color: 'var(--accent-light)',
-                background: 'rgba(0,102,204,0.15)',
+                background: 'var(--accent-bg)',
                 padding: '2px 6px',
                 borderRadius: 4,
                 fontWeight: 700,
@@ -144,7 +144,7 @@ export const AssistantDrawer: React.FC = () => {
       <div
         style={{
           padding: 'var(--space-3) var(--space-4)',
-          background: 'rgba(255,255,255,0.02)',
+          background: 'var(--surface-2)',
           borderBottom: '1px solid var(--border)',
           display: 'flex',
           gap: 6,

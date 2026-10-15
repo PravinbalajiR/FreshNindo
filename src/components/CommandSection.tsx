@@ -3,22 +3,21 @@
 
 import React, { useMemo } from 'react';
 import { useApp } from '../store/AppContext';
-import { BATCHES, DESTINATIONS } from '../data/dataset';
+import type { Destination, InventoryBatch, Route } from '../data/dataset';
 import { EmptyState, FeasibilityBadge, formatINR, formatKg, formatPct, Spinner } from './shared';
 import { checkFeasibility } from '../engine/optimizer';
-import { ROUTES } from '../data/dataset';
 
-function getUrgentBatches() {
-  return BATCHES.filter((b) => b.remaining_shelf_life_hours <= 24).sort(
+function getUrgentBatches(batches: InventoryBatch[]) {
+  return batches.filter((b) => b.remaining_shelf_life_hours <= 24).sort(
     (a, b) => a.remaining_shelf_life_hours - b.remaining_shelf_life_hours
   );
 }
 
-function getBatchFeasibility(batch: (typeof BATCHES)[0]) {
+function getBatchFeasibility(batch: InventoryBatch, routes: Route[], destinations: Destination[]) {
   let bestStatus = 'INFEASIBLE' as 'READY' | 'TIME_SENSITIVE' | 'INFEASIBLE';
-  for (const route of ROUTES) {
+  for (const route of routes) {
     if (!route.available) continue;
-    const dest = DESTINATIONS.find((d) => d.destination_id === route.destination_id);
+    const dest = destinations.find((d) => d.destination_id === route.destination_id);
     if (!dest) continue;
     const result = checkFeasibility(batch, route, dest);
     if (result.status === 'READY') { bestStatus = 'READY'; break; }
@@ -28,8 +27,9 @@ function getBatchFeasibility(batch: (typeof BATCHES)[0]) {
 }
 
 export const CommandSection: React.FC = () => {
-  const { state, navigate, generatePlan } = useApp();
-  const urgentBatches = useMemo(getUrgentBatches, []);
+  const { state, navigate, generatePlan, destinations } = useApp();
+  const BATCHES = state.batches;
+  const urgentBatches = useMemo(() => getUrgentBatches(BATCHES), [BATCHES]);
   const totalKg = BATCHES.reduce((s, b) => s + b.quantity_kg, 0);
   const valueAtRisk = urgentBatches.reduce(
     (s, b) => s + b.quantity_kg * b.acquisition_cost_per_kg,
@@ -128,7 +128,7 @@ export const CommandSection: React.FC = () => {
         </div>
         <div className="card card-sm">
           <div className="card-title">Destinations</div>
-          <div className="card-value card-value-sm num">{DESTINATIONS.length}</div>
+          <div className="card-value card-value-sm num">{destinations.length}</div>
           <div className="card-meta">active markets available</div>
         </div>
         {plan && (
@@ -170,7 +170,7 @@ export const CommandSection: React.FC = () => {
           />
         ) : (
           urgentBatches.map((batch, i) => {
-            const bestStatus = getBatchFeasibility(batch);
+            const bestStatus = getBatchFeasibility(batch, state.routes, destinations);
             return (
               <div key={batch.batch_id} className="urgency-item anim-fade-up" style={{ animationDelay: `${(i + 4) * 60}ms` }}>
                 <span className="urgency-num">{i + 1}</span>

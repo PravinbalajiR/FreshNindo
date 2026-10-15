@@ -1,17 +1,21 @@
 // FreshRoute — Destinations Section
-// Demand, market context, interactive Google Map, and fulfillment tracking.
+// Demand, market context, road-route decision map, and fulfillment tracking.
 
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { DESTINATIONS, BATCHES } from '../data/dataset';
 import { formatKg, formatINR } from './shared';
-import { GoogleMapView } from './GoogleMapView';
+import { RouteExplorer } from './map/RouteExplorer';
+import { routeDecisions } from '../engine/supplyChain';
 
 export const DestinationsSection: React.FC = () => {
-  const { state, syncRoutesWithGoogle } = useApp();
+  const { state, syncRoutesWithGoogle, destinations: DESTINATIONS } = useApp();
   const [selectedDestId, setSelectedDestId] = useState<string | null>(null);
 
   const plan = state.scenarioPlan || state.optimized;
+  const decisions = useMemo(
+    () => routeDecisions(state.routes, DESTINATIONS, state.batches, plan),
+    [state.routes, DESTINATIONS, state.batches, plan]
+  );
 
   // Compute allocated + remaining demand per destination per commodity
   const allocatedByDest = useMemo(() => {
@@ -26,12 +30,12 @@ export const DestinationsSection: React.FC = () => {
       map[destId][comm] = (map[destId][comm] ?? 0) + a.quantity_kg;
     });
     return map;
-  }, [plan]);
+  }, [plan, DESTINATIONS]);
 
-  const allCommodities = [...new Set(BATCHES.map((b) => b.commodity))].sort();
+  const allCommodities = [...new Set(state.batches.map((b) => b.commodity))].sort();
 
   return (
-    <div className="page-wrapper">
+    <div className="page-wrapper" style={{ maxWidth: 1400 }}>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div>
@@ -73,13 +77,16 @@ export const DestinationsSection: React.FC = () => {
         </div>
       </div>
 
-      {/* Interactive Google Map with Route Highlighting */}
-      <GoogleMapView
-        routes={state.routes}
-        selectedDestId={selectedDestId}
-        onSelectDest={setSelectedDestId}
-        routesSource={state.routesSource}
-      />
+      <div className="page-purpose">
+        <span className="step">ⓘ</span>
+        <span>
+          Each line is the real road from Nashik. <b>Green = chosen, amber = chosen but urgent, red = blocked, grey = not used.</b>{' '}
+          Click a route for the optimizer's reasoning, what ships on it, and turn-by-turn directions.
+        </span>
+      </div>
+      <div style={{ marginBottom: 'var(--space-8)' }}>
+        <RouteExplorer decisions={decisions} />
+      </div>
 
       {/* Destination cards */}
       <div
@@ -104,7 +111,7 @@ export const DestinationsSection: React.FC = () => {
               style={{
                 animationDelay: `${idx * 60}ms`,
                 borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
-                boxShadow: isSelected ? '0 0 16px rgba(0,102,204,0.3)' : undefined,
+                boxShadow: isSelected ? '0 0 0 3px var(--accent-bg)' : undefined,
                 cursor: 'pointer',
               }}
               onClick={() => setSelectedDestId(isSelected ? null : dest.destination_id)}

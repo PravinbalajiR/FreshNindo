@@ -116,3 +116,37 @@ export const DiffChip: React.FC<{
   const sign = value > 0 ? '+' : '';
   return <span className={cls}>{isNeutral ? '—' : `${sign}${fmt(value)}`}</span>;
 };
+
+/** One-line "what this screen is for" header shown under every portal page title. */
+export const PageHeader: React.FC<{
+  title: string;
+  subtitle?: string;
+  purpose: React.ReactNode;
+  actions?: React.ReactNode;
+}> = ({ title, subtitle, purpose, actions }) => (
+  <>
+    <div className="page-header" style={{ marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+      <div>
+        <h1 className="page-title">{title}</h1>
+        {subtitle && <p className="page-subtitle">{subtitle}</p>}
+      </div>
+      {actions}
+    </div>
+    <div className="page-purpose">
+      <span className="step">ⓘ</span>
+      <span>{purpose}</span>
+    </div>
+  </>
+);
+
+/** Small transient confirmation message. */
+export function useToast() {
+  const [msg, setMsg] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!msg) return;
+    const t = setTimeout(() => setMsg(null), 2800);
+    return () => clearTimeout(t);
+  }, [msg]);
+  const node = msg ? <div className="toast" role="status">{msg}</div> : null;
+  return { show: setMsg, node };
+}

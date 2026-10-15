@@ -1,30 +1,32 @@
 // FreshRoute — Inventory Section (Batch Intelligence)
 // Browse, search, filter inventory. Select a batch to inspect routes, feasibility, economics.
 
-import React, { useMemo, useState } from 'react';
+import React, { lazy, Suspense, useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { BATCHES, DESTINATIONS, ROUTES } from '../data/dataset';
 import { checkFeasibility } from '../engine/optimizer';
 import { FeasibilityBadge, MarginBar, formatINR, formatKg } from './shared';
 import type { InventoryBatch } from '../data/dataset';
+
+const CrateStack3D = lazy(() => import('./three/CrateStack3D'));
 
 const BatchDetailPanel: React.FC<{
   batch: InventoryBatch;
   allocatedKg: number;
   onClose: () => void;
 }> = ({ batch, allocatedKg, onClose }) => {
+  const { state, destinations } = useApp();
   const valueAtRisk = batch.quantity_kg * batch.acquisition_cost_per_kg;
 
   const routeAnalysis = useMemo(() =>
-    ROUTES.map((route) => {
-      const dest = DESTINATIONS.find((d) => d.destination_id === route.destination_id)!;
+    state.routes.map((route) => {
+      const dest = destinations.find((d) => d.destination_id === route.destination_id)!;
       const feasibility = checkFeasibility(batch, route, dest);
       const demand = dest.demand_by_commodity[batch.commodity] ?? 0;
       const sellingPrice = dest.selling_price_by_commodity[batch.commodity] ?? 0;
       const netPerKg = sellingPrice - route.transport_cost_per_kg - batch.acquisition_cost_per_kg;
       return { route, dest, feasibility, demand, sellingPrice, netPerKg };
     }).sort((a, b) => b.netPerKg - a.netPerKg),
-    [batch]
+    [batch, state.routes, destinations]
   );
 
   return (
@@ -128,6 +130,8 @@ const BatchDetailPanel: React.FC<{
 
 export const InventorySection: React.FC = () => {
   const { state } = useApp();
+  const BATCHES = state.batches;
+  const [view, setView] = useState<'table' | '3d'>('3d');
   const [search, setSearch] = useState('');
   const [filterCommodity, setFilterCommodity] = useState('all');
   const [filterRisk, setFilterRisk] = useState('all');
@@ -156,7 +160,7 @@ export const InventorySection: React.FC = () => {
       if (filterRisk === 'stable' && b.remaining_shelf_life_hours <= 24) return false;
       return true;
     });
-  }, [search, filterCommodity, filterRisk]);
+  }, [BATCHES, search, filterCommodity, filterRisk]);
 
   const selectedBatch = BATCHES.find((b) => b.batch_id === selectedBatchId);
 
@@ -203,7 +207,23 @@ export const InventorySection: React.FC = () => {
         </span>
       </div>
 
-      <div className="table-wrap anim-fade-up anim-fade-up-1">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: 'var(--space-4) 0 var(--space-3)', gap: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          {view === '3d' ? 'Warehouse view: one stack per batch, coloured by freshness. Click a stack for details.' : 'Click a row for route-by-route feasibility.'}
+        </span>
+        <div className="segmented">
+          <button className={view === '3d' ? 'on' : ''} onClick={() => setView('3d')}>3D warehouse</button>
+          <button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Table</button>
+        </div>
+      </div>
+
+      {view === '3d' && (
+        <Suspense fallback={<div className="scene-frame" style={{ display: 'grid', placeItems: 'center' }}>Loading 3D…</div>}>
+          <CrateStack3D batches={filtered} plan={plan} selectedId={selectedBatchId} onSelect={setSelectedBatchId} height={400} />
+        </Suspense>
+      )}
+
+      {view === 'table' && <div className="table-wrap anim-fade-up anim-fade-up-1">
         <table>
           <thead>
             <tr>
@@ -303,7 +323,7 @@ export const InventorySection: React.FC = () => {
             })}
           </tbody>
         </table>
-      </div>
+      </div>}
 
       {selectedBatch && (
         <BatchDetailPanel

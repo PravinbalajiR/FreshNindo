@@ -12,6 +12,18 @@ export interface InventoryBatch {
   acquisition_cost_per_kg: number; // INR/kg
   quality_grade: 'A' | 'B' | 'C';
   notes?: string;
+  farmer_id?: string; // supplier account (portal-added and seed batches)
+  added_at?: string; // ISO timestamp when a farmer listed the batch
+}
+
+export interface RetailerOrder {
+  order_id: string;
+  retailer_id: string;
+  destination_id: string;
+  commodity: string;
+  quantity_kg: number;
+  max_price_per_kg?: number;
+  created_at: string;
 }
 
 export interface Destination {
