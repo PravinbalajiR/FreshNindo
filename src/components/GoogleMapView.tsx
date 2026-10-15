@@ -23,6 +23,7 @@ declare global {
   interface Window {
     google?: any;
     initFreshRouteGoogleMap?: () => void;
+    gm_authFailure?: () => void;
   }
 }
 
@@ -96,8 +97,18 @@ export const GoogleMapView: React.FC<GoogleMapViewProps> = ({
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [authFailed, setAuthFailed] = useState(false);
+  const [viewMode, setViewMode] = useState<'map' | 'schematic'>('map');
 
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+
+  // Intercept Google Maps Auth & Billing failures
+  useEffect(() => {
+    window.gm_authFailure = () => {
+      console.warn('[GoogleMapView] Google Maps Authentication or Billing check failed (billing not active on GCP project).');
+      setAuthFailed(true);
+    };
+  }, []);
 
   // Load Google Maps JS Script
   useEffect(() => {
@@ -140,6 +151,7 @@ export const GoogleMapView: React.FC<GoogleMapViewProps> = ({
 
     document.head.appendChild(script);
   }, [apiKey]);
+
 
   // Initialize and update Map instance
   useEffect(() => {
@@ -290,7 +302,35 @@ export const GoogleMapView: React.FC<GoogleMapViewProps> = ({
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* View Toggle */}
+          <div
+            style={{
+              display: 'inline-flex',
+              background: 'var(--surface-2)',
+              padding: 2,
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              marginRight: 'var(--space-2)',
+            }}
+          >
+            <button
+              className={`btn btn-sm ${viewMode === 'map' && !mapError ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ padding: '2px 8px', fontSize: 11 }}
+              onClick={() => setViewMode('map')}
+              disabled={!!mapError}
+            >
+              🗺️ Map
+            </button>
+            <button
+              className={`btn btn-sm ${viewMode === 'schematic' || mapError ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ padding: '2px 8px', fontSize: 11 }}
+              onClick={() => setViewMode('schematic')}
+            >
+              ⚡ Schematic
+            </button>
+          </div>
+
           <button
             className={`btn btn-sm ${!selectedDestId ? 'btn-primary' : 'btn-ghost'}`}
             onClick={() => onSelectDest(null)}
@@ -309,10 +349,64 @@ export const GoogleMapView: React.FC<GoogleMapViewProps> = ({
         </div>
       </div>
 
+      {/* Google Cloud Notice Banner if auth / billing check fails */}
+      {authFailed && (
+        <div
+          style={{
+            background: 'rgba(255, 159, 10, 0.1)',
+            borderBottom: '1px solid rgba(255, 159, 10, 0.25)',
+            padding: '7px var(--space-5)',
+            fontSize: 12,
+            color: '#ffd60a',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 8,
+          }}
+        >
+          <div>
+            <strong>GCP Billing Notice:</strong> Project #868625022761 has billing inactive. Map is active with development tiles, or toggle to <strong>⚡ Schematic</strong> for presentations.
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              className="btn btn-sm"
+              style={{
+                fontSize: 11,
+                padding: '2px 8px',
+                background: viewMode === 'schematic' ? 'var(--accent)' : 'var(--surface-3)',
+                color: '#fff',
+                border: '1px solid var(--border)',
+              }}
+              onClick={() => setViewMode(viewMode === 'map' ? 'schematic' : 'map')}
+            >
+              {viewMode === 'map' ? 'Switch to Vector Schematic' : 'Switch to Google Map'}
+            </button>
+            <a
+              href="https://console.developers.google.com/billing/enable?project=868625022761"
+              target="_blank"
+              rel="noreferrer"
+              style={{ fontSize: 11, color: 'var(--accent-light)', textDecoration: 'underline' }}
+            >
+              Enable GCP Billing ↗
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* Map or Fallback View */}
       <div style={{ position: 'relative', width: '100%', height: 380, background: '#111113' }}>
-        {mapError ? (
-          // Elegant Fallback when Google Maps JS cannot load
+        {/* Google Map element is kept in DOM to preserve instance state */}
+        <div
+          ref={mapContainerRef}
+          style={{
+            width: '100%',
+            height: '100%',
+            display: viewMode === 'map' && !mapError ? 'block' : 'none',
+          }}
+        />
+
+        {(viewMode === 'schematic' || mapError) && (
           <div
             style={{
               height: '100%',
@@ -324,34 +418,49 @@ export const GoogleMapView: React.FC<GoogleMapViewProps> = ({
               textAlign: 'center',
             }}
           >
-            <div style={{ fontSize: 32, marginBottom: 'var(--space-2)' }}>🗺</div>
+            <div style={{ fontSize: 26, marginBottom: 'var(--space-2)' }}>⚡</div>
             <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-              Interactive Map Canvas (Fallback Schematic)
+              FreshRoute Transit Corridor Schematic
             </div>
-            <p style={{ fontSize: 12.5, color: 'var(--text-muted)', maxWidth: 440, marginBottom: 'var(--space-4)' }}>
-              {mapError}. The application's deterministic routing, freshness margins, and transit optimizer continue to function normally.
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 480, marginBottom: 'var(--space-4)' }}>
+              Deterministic corridor network connecting Nashik Central Hub to Maharashtra wholesale terminals. Select any corridor node to inspect dispatch feasibility.
             </p>
-            {/* Visual SVG Corridor Diagram */}
-            <svg width="340" height="140" viewBox="0 0 340 140" style={{ maxWidth: '100%' }}>
-              <circle cx="50" cy="70" r="16" fill="#0066cc" />
-              <text x="50" y="74" textAnchor="middle" fill="#fff" fontSize="10" fontWeight="bold">DC</text>
-              <line x1="66" y1="70" x2="160" y2="30" stroke="#424245" strokeWidth="2" strokeDasharray="4 4" />
-              <line x1="66" y1="70" x2="250" y2="50" stroke="#424245" strokeWidth="2" strokeDasharray="4 4" />
-              <line x1="66" y1="70" x2="250" y2="90" stroke="#424245" strokeWidth="2" strokeDasharray="4 4" />
-              <line x1="66" y1="70" x2="160" y2="110" stroke="#424245" strokeWidth="2" strokeDasharray="4 4" />
-              <circle cx="160" cy="30" r="10" fill="#30d158" />
-              <circle cx="250" cy="50" r="10" fill="#ffd60a" />
-              <circle cx="250" cy="90" r="10" fill="#ffd60a" />
-              <circle cx="160" cy="110" r="10" fill="#30d158" />
-              <text x="175" y="34" fill="#e8e8ed" fontSize="10">Nashik (0.5h)</text>
-              <text x="265" y="54" fill="#e8e8ed" fontSize="10">Mumbai (6h)</text>
-              <text x="265" y="94" fill="#e8e8ed" fontSize="10">Pune (3.5h)</text>
-              <text x="175" y="114" fill="#e8e8ed" fontSize="10">Aurangabad (5h)</text>
+            {/* Visual Interactive SVG Corridor Diagram */}
+            <svg width="420" height="150" viewBox="0 0 420 150" style={{ maxWidth: '100%' }}>
+              <line x1="70" y1="75" x2="180" y2="35" stroke={selectedDestId === 'D-NAS-LOCAL' ? 'var(--accent)' : '#424245'} strokeWidth={selectedDestId === 'D-NAS-LOCAL' ? '3' : '2'} strokeDasharray={selectedDestId === 'D-NAS-LOCAL' ? 'none' : '4 4'} />
+              <line x1="70" y1="75" x2="310" y2="45" stroke={selectedDestId === 'D-MUM' ? 'var(--accent)' : '#424245'} strokeWidth={selectedDestId === 'D-MUM' ? '3' : '2'} strokeDasharray={selectedDestId === 'D-MUM' ? 'none' : '4 4'} />
+              <line x1="70" y1="75" x2="310" y2="105" stroke={selectedDestId === 'D-PUN' ? 'var(--accent)' : '#424245'} strokeWidth={selectedDestId === 'D-PUN' ? '3' : '2'} strokeDasharray={selectedDestId === 'D-PUN' ? 'none' : '4 4'} />
+              <line x1="70" y1="75" x2="180" y2="120" stroke={selectedDestId === 'D-AUR' ? 'var(--accent)' : '#424245'} strokeWidth={selectedDestId === 'D-AUR' ? '3' : '2'} strokeDasharray={selectedDestId === 'D-AUR' ? 'none' : '4 4'} />
+
+              {/* Origin Hub */}
+              <circle cx="70" cy="75" r="18" fill="#0066cc" stroke="#fff" strokeWidth="2" style={{ cursor: 'pointer' }} onClick={() => onSelectDest(null)} />
+              <text x="70" y="79" textAnchor="middle" fill="#fff" fontSize="11" fontWeight="bold" pointerEvents="none">DC</text>
+              <text x="70" y="105" textAnchor="middle" fill="#86868b" fontSize="10" pointerEvents="none">Nashik Hub</text>
+
+              {/* Destination Nodes */}
+              <g style={{ cursor: 'pointer' }} onClick={() => onSelectDest('D-NAS-LOCAL')}>
+                <circle cx="180" cy="35" r="12" fill={selectedDestId === 'D-NAS-LOCAL' ? 'var(--accent)' : '#30d158'} stroke="#fff" strokeWidth={selectedDestId === 'D-NAS-LOCAL' ? '2' : '0'} />
+                <text x="198" y="39" fill="#e8e8ed" fontSize="11" fontWeight={selectedDestId === 'D-NAS-LOCAL' ? 'bold' : 'normal'}>Nashik Local (0.5h · 20km)</text>
+              </g>
+
+              <g style={{ cursor: 'pointer' }} onClick={() => onSelectDest('D-MUM')}>
+                <circle cx="310" cy="45" r="12" fill={selectedDestId === 'D-MUM' ? 'var(--accent)' : '#ffd60a'} stroke="#fff" strokeWidth={selectedDestId === 'D-MUM' ? '2' : '0'} />
+                <text x="328" y="49" fill="#e8e8ed" fontSize="11" fontWeight={selectedDestId === 'D-MUM' ? 'bold' : 'normal'}>Mumbai (4.0h · 180km)</text>
+              </g>
+
+              <g style={{ cursor: 'pointer' }} onClick={() => onSelectDest('D-PUN')}>
+                <circle cx="310" cy="105" r="12" fill={selectedDestId === 'D-PUN' ? 'var(--accent)' : '#ffd60a'} stroke="#fff" strokeWidth={selectedDestId === 'D-PUN' ? '2' : '0'} />
+                <text x="328" y="109" fill="#e8e8ed" fontSize="11" fontWeight={selectedDestId === 'D-PUN' ? 'bold' : 'normal'}>Pune (3.5h · 210km)</text>
+              </g>
+
+              <g style={{ cursor: 'pointer' }} onClick={() => onSelectDest('D-AUR')}>
+                <circle cx="180" cy="120" r="12" fill={selectedDestId === 'D-AUR' ? 'var(--accent)' : '#30d158'} stroke="#fff" strokeWidth={selectedDestId === 'D-AUR' ? '2' : '0'} />
+                <text x="198" y="124" fill="#e8e8ed" fontSize="11" fontWeight={selectedDestId === 'D-AUR' ? 'bold' : 'normal'}>Aurangabad (5.0h · 190km)</text>
+              </g>
             </svg>
           </div>
-        ) : (
-          <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
         )}
+
 
         {/* Selected Route Floating Overlay Card */}
         {selectedDest && selectedRoute && (

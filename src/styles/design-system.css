@@ -845,9 +845,19 @@ tr.selected td {
 .text-danger { color: var(--danger-text); }
 .text-muted { color: var(--text-muted); }
 .text-primary { color: var(--text-primary); }
-.text-accent { color: var(--accent-light); }
-
 .mono { font-family: var(--font-mono); font-size: 12.5px; }
+
+/* ── Google Maps Error Dialog Suppression ────────────────────────── */
+.gm-err-container,
+.gm-err-content,
+div[aria-label="Google Maps Error"],
+div[aria-label="This page can't load Google Maps correctly."] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 .bold { font-weight: 700; }
 .num { font-variant-numeric: tabular-nums; }
 
