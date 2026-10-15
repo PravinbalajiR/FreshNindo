@@ -7,6 +7,9 @@ import { checkFeasibility } from '../../engine/optimizer';
 import { batchFreshness, FRESHNESS_COLOR, routeDecisions } from '../../engine/supplyChain';
 import { RouteExplorer } from '../map/RouteExplorer';
 import { FeasibilityBadge, PageHeader, formatINR, formatKg, useToast } from '../shared';
+import { PlainWords, StockFlowBar, Term, joinAnd, outOfTen } from '../explain/PlainWords';
+import { stockFlow } from '../explain/stockFlow';
+import { storeVsShip } from '../../engine/coldStorage';
 
 const CrateStack3D = lazy(() => import('../three/CrateStack3D'));
 
@@ -24,7 +27,7 @@ function useFarmerData() {
 
 export const FarmerHome: React.FC = () => {
   const { state, plan, mine, ids } = useFarmerData();
-  const { navigate, removeBatch } = useApp();
+  const { navigate, removeBatch, destinations } = useApp();
   const [selected, setSelected] = useState<string | null>(null);
 
   const allocs = plan?.allocations.filter((a) => ids.has(a.batch.batch_id)) ?? [];
@@ -32,6 +35,24 @@ export const FarmerHome: React.FC = () => {
   const shippedKg = allocs.reduce((s, a) => s + a.quantity_kg, 0);
   const expected = allocs.reduce((s, a) => s + a.gross_revenue, 0);
   const atRisk = Math.max(0, listedKg - shippedKg);
+  const advice = useMemo(() => storeVsShip(mine, plan, destinations, state.lots), [mine, plan, destinations, state.lots]);
+  const flow = useMemo(() => stockFlow(mine, plan, advice), [mine, plan, advice]);
+  const markets = [...new Set(allocs.map((a) => a.destination.region))];
+  const urgentMine = allocs.filter((a) => a.feasibility.status === 'TIME_SENSITIVE');
+  const myStored = state.lots.filter((l) => l.farmer_id === state.user?.id);
+  const points = [
+    outOfTen(flow),
+    shippedKg > 0
+      ? `${formatKg(shippedKg)} of your crop goes to ${joinAnd(markets)} today and should bring in about ${formatINR(expected)} at market prices.`
+      : "None of your stock has a buyer in today's plan yet.",
+    urgentMine.length
+      ? `${urgentMine.map((a) => a.batch.commodity).join(', ')} must leave first: ${urgentMine.length > 1 ? 'they have' : 'it has'} only a few hours of freshness to spare.`
+      : 'All your shipped stock arrives with plenty of freshness to spare.',
+    atRisk > 0
+      ? `${formatKg(atRisk)} has no full-price buyer today. See the suggestions in the list below, or the Cold storage page.`
+      : 'Every kg you listed is placed.',
+    myStored.length ? `You also have ${myStored.length} lot${myStored.length > 1 ? 's' : ''} in cold storage.` : '',
+  ].filter(Boolean);
 
   return (
     <div className="page-wrapper">
@@ -49,6 +70,9 @@ export const FarmerHome: React.FC = () => {
         <div className="card"><div className="card-title">Not yet placed</div><div className="card-value" style={{ color: atRisk > 0 ? 'var(--warning-text)' : undefined }}>{formatKg(atRisk)}</div><div className="card-meta">{atRisk > 0 ? 'see suggestions below' : 'everything is placed'}</div></div>
       </div>
 
+      <PlainWords topic="Farmer stock overview" points={points} />
+      <StockFlowBar segments={flow} caption="Where your stock goes today" />
+
       <div className="section-title">Your stock in 3D</div>
       <div className="section-sub">Each stack is one batch (1 crate ≈ 100 kg). Click a stack to find it in the list.</div>
       <Suspense fallback={<div className="scene-frame" style={{ display: 'grid', placeItems: 'center' }}>Loading 3D…</div>}>
@@ -56,7 +80,9 @@ export const FarmerHome: React.FC = () => {
       </Suspense>
 
       <div className="section-title" style={{ marginTop: 24 }}>Where each batch goes</div>
-      <div className="section-sub">Decided by the distribution optimizer: freshest-margin, best-price market first.</div>
+      <div className="section-sub">
+        Decided by the distribution optimizer: best price first, as long as it arrives fresh. The hours on each badge are the <Term k="Fresh Window" /> left on arrival.
+      </div>
       {mine.length === 0 ? (
         <div className="card">No stock yet. Click <b>+ Add stock</b> to list your first batch.</div>
       ) : (

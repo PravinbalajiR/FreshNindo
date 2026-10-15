@@ -14,6 +14,7 @@ import { ScenarioSection } from './components/ScenarioSection';
 import { AssistantDrawer } from './components/AssistantDrawer';
 import { FarmerAddStock, FarmerHome, FarmerRoutes } from './components/farmer/FarmerPortal';
 import { RetailerHome, RetailerOrder, RetailerTrack } from './components/retailer/RetailerPortal';
+import { FarmerStorage, ManagerStorage } from './components/storage/ColdStoragePortal';
 import './styles/design-system.css';
 import './styles/portals.css';
 
@@ -32,6 +33,7 @@ const NAV: Record<Role, { group: string; items: NavItem[] }[]> = {
         { id: 'farmer-home', icon: '🌾', label: 'My stock', hint: 'Freshness & where it goes' },
         { id: 'farmer-add', icon: '➕', label: 'Add stock', hint: 'List a new batch' },
         { id: 'farmer-routes', icon: '🗺', label: 'Routes & decisions', hint: 'Road map of markets' },
+        { id: 'farmer-storage', icon: '❄', label: 'Cold storage', hint: 'Store stock across India' },
       ],
     },
   ],
@@ -58,6 +60,7 @@ const NAV: Record<Role, { group: string; items: NavItem[] }[]> = {
       group: 'Decide',
       items: [
         { id: 'destinations', icon: '🗺', label: 'Routes & markets', hint: 'Road map + decisions' },
+        { id: 'storage', icon: '❄', label: 'Cold storage', hint: 'Lots across India + advice' },
         { id: 'scenario', icon: '🔬', label: 'Scenario Lab', hint: 'What-if disruptions' },
         { id: 'impact', icon: '📊', label: 'Impact', hint: 'Vs. baseline plan' },
       ],
@@ -73,6 +76,8 @@ function Section({ id }: { id: ActiveSection }) {
     case 'destinations': return <DestinationsSection />;
     case 'scenario': return <ScenarioSection />;
     case 'impact': return <ImpactSection />;
+    case 'storage': return <ManagerStorage />;
+    case 'farmer-storage': return <FarmerStorage />;
     case 'farmer-home': return <FarmerHome />;
     case 'farmer-add': return <FarmerAddStock />;
     case 'farmer-routes': return <FarmerRoutes />;
@@ -148,7 +153,7 @@ function AppShell() {
           <button
             className="btn btn-ghost btn-sm"
             style={{ width: '100%', justifyContent: 'center', fontSize: 12 }}
-            onClick={() => confirm('Reset all stock and orders to the demo starting point?') && resetDemo()}
+            onClick={() => confirm('Reset all stock, orders and cold-storage lots to the demo starting point?') && resetDemo()}
             title="Reset stock and orders to the initial demo state"
           >
             ↺ Reset demo data

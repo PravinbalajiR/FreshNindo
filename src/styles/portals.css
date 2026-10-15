@@ -386,3 +386,90 @@
 .list-title { font-weight: 600; }
 .list-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .big-number { font-size: 32px; font-weight: 700; letter-spacing: -1px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+
+/* Plain-language layer */
+.plain-words {
+  background: linear-gradient(180deg, #f2f8ff 0%, #ffffff 100%);
+  border: 1px solid #d6e6fb;
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-5);
+}
+.plain-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.plain-title { font-weight: 700; font-size: 14px; color: var(--accent-light); }
+.plain-list { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14.5px; color: var(--text-primary); line-height: 1.5; }
+.plain-ai {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.plain-source { margin-top: 8px; font-size: 11px; color: var(--text-subtle); }
+
+/* Where-the-stock-goes bar (100% stacked, 2px surface gaps, 4px rounded ends) */
+.flow { margin: 0 0 var(--space-5); }
+.flow-caption { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }
+.flow-bar { display: flex; gap: 2px; height: 28px; background: var(--surface); }
+.flow-seg { position: relative; height: 100%; transition: opacity var(--dur-fast); min-width: 6px; }
+.flow-seg:first-child { border-radius: 4px 0 0 4px; }
+.flow-seg:last-child { border-radius: 0 4px 4px 0; }
+.flow-seg:only-child { border-radius: 4px; }
+.flow-seg.dim { opacity: 0.35; }
+.flow-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-elevated);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 20;
+  pointer-events: none;
+}
+.flow-tip-note { color: var(--text-muted); max-width: 240px; white-space: normal; margin-top: 2px; }
+.flow-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 13px; color: var(--text-secondary); }
+.flow-key { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+.flow-key b { color: var(--text-primary); }
+.flow-kg { color: var(--text-muted); font-size: 12px; }
+.flow-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+/* Glossary terms */
+.term { position: relative; border-bottom: 1px dotted var(--text-muted); cursor: help; }
+.term-tip {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  width: 260px;
+  background: var(--text-primary);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 8px;
+  z-index: 50;
+  text-transform: none;
+  letter-spacing: 0;
+  box-shadow: var(--shadow-modal);
+}
+.term:hover .term-tip, .term:focus .term-tip { display: block; }
+
+/* Cold storage */
+.days-bar { height: 10px; background: var(--surface-3); border-radius: 999px; overflow: hidden; display: flex; }
+.days-used { height: 100%; }
+.facility-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; background: var(--surface); display: grid; gap: 6px; cursor: pointer; text-align: left; font-family: var(--font); color: var(--text-primary); width: 100%; transition: all var(--dur-fast); }
+.facility-card:hover { border-color: var(--border-strong); }
+.facility-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+.facility-card.off { opacity: 0.55; }
+.chip { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--surface-3); color: var(--text-secondary); margin: 0 4px 4px 0; }
+.advice-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; background: var(--surface); display: grid; gap: 4px; }
+.advice-tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; display: inline-block; }

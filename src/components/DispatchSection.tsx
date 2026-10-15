@@ -3,6 +3,8 @@
 
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../store/AppContext';
+import { PlainWords } from './explain/PlainWords';
+import { dispatchPoints } from './explain/narratives';
 import { EmptyState, FeasibilityBadge, MarginBar, formatINR, formatKg, Spinner } from './shared';
 import type { Allocation } from '../types';
 
@@ -154,6 +156,8 @@ export const DispatchSection: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {plan && <PlainWords topic="Dispatch loading list" points={dispatchPoints(plan)} />}
 
       {!plan ? (
         <EmptyState

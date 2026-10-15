@@ -3,6 +3,8 @@
 
 import React from 'react';
 import { useApp } from '../store/AppContext';
+import { PlainWords } from './explain/PlainWords';
+import { impactPoints } from './explain/narratives';
 import { EmptyState, DiffChip, formatINR, formatKg, formatPct, Spinner } from './shared';
 import {
   BarChart,
@@ -110,6 +112,12 @@ export const ImpactSection: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <PlainWords
+        topic="Our plan vs the simple oldest-first rule"
+        points={impactPoints(comparison)}
+        extraFacts={[`Baseline net revenue ₹${Math.round(bm.net_revenue)}`, `Our net revenue ₹${Math.round(om.net_revenue)}`, `Baseline spoilage ${Math.round(bm.estimated_spoilage_kg)} kg`, `Our spoilage ${Math.round(om.estimated_spoilage_kg)} kg`]}
+      />
 
       {/* Strategy descriptions */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>

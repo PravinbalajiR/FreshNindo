@@ -8,6 +8,7 @@ import { RouteExplorer } from '../map/RouteExplorer';
 import { useDirections } from '../map/useDirections';
 import { ShipmentPanel, initialElapsed, useShipmentSim } from '../tracking/ShipmentPanel';
 import { EmptyState, FeasibilityBadge, PageHeader, formatINR, formatKg, useToast } from '../shared';
+import { PlainWords } from '../explain/PlainWords';
 
 // Carries "track this truck" from the home list into the tracking page
 let pendingTrackId: string | null = null;
@@ -43,6 +44,22 @@ export const RetailerHome: React.FC = () => {
   const covered = coverage.reduce((s, c) => s + c.covered_kg, 0);
   const inboundKg = incoming.reduce((s, a) => s + a.quantity_kg, 0);
   const nextEta = incoming.length ? Math.min(...incoming.map((a) => a.route.travel_time_hours - initialElapsed(a))) : null;
+  const waiting = coverage.filter((c) => c.status !== 'COVERED');
+  const tight = incoming.filter((a) => a.feasibility.status === 'TIME_SENSITIVE');
+  const points = [
+    coverage.length
+      ? `You ordered ${formatKg(ordered)}; today's trucks cover ${formatKg(covered)} of it (${ordered ? Math.round((covered / ordered) * 100) : 0}%).`
+      : 'You have no open orders.',
+    waiting.length
+      ? `${waiting.map((c) => `${c.order.commodity} (${formatKg(c.order.quantity_kg - c.covered_kg)} missing)`).join(', ')}: not enough fresh stock yet. It may be filled when farmers list more.`
+      : coverage.length ? 'Every order is fully covered.' : '',
+    incoming.length
+      ? `${incoming.length} truck load${incoming.length > 1 ? 's are' : ' is'} on the way; the first arrives in about ${nextEta?.toFixed(1)} hours.`
+      : 'No trucks are heading to your market yet.',
+    tight.length
+      ? `Unload ${tight.map((a) => a.batch.commodity.toLowerCase()).join(', ')} quickly: ${tight.length > 1 ? 'they arrive' : 'it arrives'} with only a few hours of freshness left.`
+      : '',
+  ].filter(Boolean);
 
   return (
     <div className="page-wrapper">
@@ -59,6 +76,8 @@ export const RetailerHome: React.FC = () => {
         <div className="card"><div className="card-title">Trucks heading to you</div><div className="card-value">{incoming.length}</div><div className="card-meta">{formatKg(inboundKg)} total, all buyers</div></div>
         <div className="card"><div className="card-title">Next arrival</div><div className="card-value">{nextEta !== null ? `${nextEta.toFixed(1)}h` : '—'}</div><div className="card-meta">simulated clock</div></div>
       </div>
+
+      <PlainWords topic="Retailer orders and deliveries" points={points} />
 
       <div className="grid-2">
         <div>

@@ -44,7 +44,8 @@ async function runTests() {
     // 1.2 Secret Leak Prevention: verify raw API keys are never returned in health response
     const jsonStr = JSON.stringify(healthData);
     assert(
-      !jsonStr.includes(config.openRouterApiKey) && !jsonStr.includes(config.googleMapsApiKey),
+      // Empty keys are skipped: ''.includes('') is always true
+      [config.openRouterApiKey, config.googleMapsApiKey].every((k) => !k || !jsonStr.includes(k)),
       S1,
       'Raw API keys are strictly excluded from /api/health client response'
     );

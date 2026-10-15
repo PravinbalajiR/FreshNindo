@@ -3,7 +3,8 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { ROUTES, DESTINATIONS, BATCHES } from '../data/dataset';
+import { PlainWords } from './explain/PlainWords';
+import { scenarioPoints } from './explain/narratives';
 import { EmptyState, formatINR, formatKg, FeasibilityBadge, Spinner } from './shared';
 import type { ScenarioModification } from '../types';
 
@@ -223,6 +224,7 @@ export const ScenarioSection: React.FC = () => {
         />
       ) : (
         <>
+          <PlainWords topic="What-if scenario" points={scenarioPoints(state.optimized, state.scenarioPlan, state.scenarios)} />
           {hasScenario && (
             <div className="action-banner warning anim-fade-up">
               <div>

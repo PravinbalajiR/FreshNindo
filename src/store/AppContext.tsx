@@ -23,6 +23,8 @@ import {
 } from '../data/dataset';
 import { MOCK_USERS, SEED_BATCH_OWNERS, type MockUser } from '../data/users';
 import { withOrderDemand } from '../engine/supplyChain';
+import { apiFetch } from '../services/api';
+import { seedLots, type StoredLot } from '../data/coldStorage';
 
 export type ActiveSection =
   // Manager
@@ -32,10 +34,12 @@ export type ActiveSection =
   | 'destinations'
   | 'scenario'
   | 'impact'
+  | 'storage'
   // Farmer
   | 'farmer-home'
   | 'farmer-add'
   | 'farmer-routes'
+  | 'farmer-storage'
   // Retailer
   | 'retailer-home'
   | 'retailer-order'
@@ -61,6 +65,7 @@ interface PersistedState {
   userId: string | null;
   batches: InventoryBatch[];
   orders: RetailerOrder[];
+  lots?: StoredLot[];
 }
 
 function loadPersisted(): PersistedState | null {
@@ -85,6 +90,7 @@ interface AppState {
   user: MockUser | null;
   batches: InventoryBatch[];
   orders: RetailerOrder[];
+  lots: StoredLot[];
   section: ActiveSection;
   routes: Route[];
   routesSource: 'google_routes' | 'cache' | 'fallback_synthetic';
@@ -110,6 +116,8 @@ type Action =
   | { type: 'REMOVE_BATCH'; payload: string }
   | { type: 'ADD_ORDER'; payload: RetailerOrder }
   | { type: 'CANCEL_ORDER'; payload: string }
+  | { type: 'STORE_BATCH'; payload: { batchId: string; lot: StoredLot } }
+  | { type: 'RELEASE_LOT'; payload: { lotId: string; batch: InventoryBatch } }
   | { type: 'SET_SECTION'; payload: ActiveSection }
   | { type: 'GENERATE_START' }
   | {
@@ -144,6 +152,23 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, orders: [...state.orders, action.payload] };
     case 'CANCEL_ORDER':
       return { ...state, orders: state.orders.filter((o) => o.order_id !== action.payload) };
+    case 'STORE_BATCH': {
+      // Partial store keeps the rest of the batch in today's dispatch
+      const { batchId, lot } = action.payload;
+      return {
+        ...state,
+        batches: state.batches.flatMap((b) =>
+          b.batch_id !== batchId ? [b] : lot.quantity_kg >= b.quantity_kg ? [] : [{ ...b, quantity_kg: b.quantity_kg - lot.quantity_kg }]
+        ),
+        lots: [...state.lots, lot],
+      };
+    }
+    case 'RELEASE_LOT':
+      return {
+        ...state,
+        lots: state.lots.filter((l) => l.lot_id !== action.payload.lotId),
+        batches: [...state.batches, action.payload.batch],
+      };
     case 'SET_SECTION':
       return { ...state, section: action.payload };
     case 'GENERATE_START':
@@ -202,6 +227,7 @@ const initialState: AppState = {
   user: null,
   batches: SEED_BATCHES,
   orders: SEED_ORDERS,
+  lots: seedLots(),
   section: 'command',
   routes: ROUTES,
   routesSource: 'fallback_synthetic',
@@ -238,6 +264,10 @@ interface AppContextValue {
   removeBatch: (id: string) => void;
   addOrder: (o: Omit<RetailerOrder, 'order_id' | 'created_at'>) => RetailerOrder;
   cancelOrder: (id: string) => void;
+  /** Move a batch (or `kg` of it) from the distribution centre into a cold store. */
+  storeBatch: (batchId: string, facilityId: string, kg?: number) => void;
+  /** Bring a stored lot back as dispatchable stock. */
+  releaseLot: (lotId: string, batch: Omit<InventoryBatch, 'batch_id' | 'added_at'>) => void;
   navigate: (section: ActiveSection) => void;
   generatePlan: () => void;
   applyScenario: (mods: ScenarioModification[]) => void;
@@ -262,17 +292,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       section: user ? HOME_SECTION[user.role] : init.section,
       batches: Array.isArray(saved.batches) && saved.batches.length ? saved.batches : init.batches,
       orders: Array.isArray(saved.orders) ? saved.orders : init.orders,
+      lots: Array.isArray(saved.lots) ? saved.lots : init.lots,
     };
   });
 
   useEffect(() => {
     try {
-      const data: PersistedState = { userId: state.user?.id ?? null, batches: state.batches, orders: state.orders };
+      const data: PersistedState = { userId: state.user?.id ?? null, batches: state.batches, orders: state.orders, lots: state.lots };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch {
       /* storage unavailable: the session just won't survive a refresh */
     }
-  }, [state.user, state.batches, state.orders]);
+  }, [state.user, state.batches, state.orders, state.lots]);
 
   const destinations = useMemo(() => withOrderDemand(DESTINATIONS, state.orders), [state.orders]);
   const planInputs = useMemo(() => ({ batches: state.batches, destinations }), [state.batches, destinations]);
@@ -280,18 +311,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback((user: MockUser) => dispatch({ type: 'LOGIN', payload: user }), []);
   const logout = useCallback(() => dispatch({ type: 'LOGOUT' }), []);
 
+  // Next free batch id, skipping ids still held by lots in cold storage
+  const nextBatchId = useCallback(() => {
+    const ids = [...state.batches.map((b) => b.batch_id), ...state.lots.map((l) => l.source_batch_id ?? '')];
+    const max = ids.reduce((m, id) => Math.max(m, parseInt(id.replace(/\D/g, ''), 10) || 0), 0);
+    return `B-${String(max + 1).padStart(3, '0')}`;
+  }, [state.batches, state.lots]);
+
   const addBatch = useCallback(
     (b: Omit<InventoryBatch, 'batch_id' | 'added_at'>) => {
-      const maxId = state.batches.reduce((m, x) => Math.max(m, parseInt(x.batch_id.replace(/\D/g, ''), 10) || 0), 0);
-      const batch: InventoryBatch = {
-        ...b,
-        batch_id: `B-${String(maxId + 1).padStart(3, '0')}`,
-        added_at: new Date().toISOString(),
-      };
+      const batch: InventoryBatch = { ...b, batch_id: nextBatchId(), added_at: new Date().toISOString() };
       dispatch({ type: 'ADD_BATCH', payload: batch });
       return batch;
     },
-    [state.batches]
+    [nextBatchId]
   );
   const removeBatch = useCallback((id: string) => dispatch({ type: 'REMOVE_BATCH', payload: id }), []);
 
@@ -305,6 +338,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [state.orders]
   );
   const cancelOrder = useCallback((id: string) => dispatch({ type: 'CANCEL_ORDER', payload: id }), []);
+
+  const storeBatch = useCallback(
+    (batchId: string, facilityId: string, kg?: number) => {
+      const b = state.batches.find((x) => x.batch_id === batchId);
+      if (!b) return;
+      const qty = Math.min(b.quantity_kg, Math.max(1, Math.round(kg ?? b.quantity_kg)));
+      const maxLot = state.lots.reduce((m, l) => Math.max(m, parseInt(l.lot_id.replace(/\D/g, ''), 10) || 0), 100);
+      const owner = MOCK_USERS.find((u) => u.id === b.farmer_id);
+      const lot: StoredLot = {
+        lot_id: `L-${maxLot + 1}`,
+        facility_id: facilityId,
+        farmer_id: b.farmer_id ?? 'DC',
+        farmer_name: owner?.name ?? 'Nashik DC stock',
+        commodity: b.commodity,
+        quantity_kg: qty,
+        grade_in: b.quality_grade,
+        stored_at: new Date().toISOString(),
+        cost_per_kg: b.acquisition_cost_per_kg,
+        source_batch_id: b.batch_id,
+      };
+      dispatch({ type: 'STORE_BATCH', payload: { batchId, lot } });
+    },
+    [state.batches, state.lots]
+  );
+
+  const releaseLot = useCallback(
+    (lotId: string, b: Omit<InventoryBatch, 'batch_id' | 'added_at'>) => {
+      dispatch({
+        type: 'RELEASE_LOT',
+        payload: { lotId, batch: { ...b, batch_id: nextBatchId(), added_at: new Date().toISOString() } },
+      });
+    },
+    [nextBatchId]
+  );
 
   const navigate = useCallback((section: ActiveSection) => {
     dispatch({ type: 'SET_SECTION', payload: section });
@@ -354,21 +421,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'TOGGLE_ASSISTANT', payload: open });
   }, []);
 
-async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
-  try {
-    const res = await fetch(url, options);
-    // If dev server proxy returns 404 or isn't active, fallback to direct backend port 3001
-    if (res.status === 404 && url.startsWith('/api')) {
-      return await fetch(`http://localhost:3001${url}`, options);
-    }
-    return res;
-  } catch (err) {
-    if (url.startsWith('/api')) {
-      return await fetch(`http://localhost:3001${url}`, options);
-    }
-    throw err;
-  }
-}
 
   // Sync route estimates with backend (Google Routes API / cached / fallback)
   const syncRoutesWithGoogle = useCallback(async () => {
@@ -575,6 +627,8 @@ async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
         removeBatch,
         addOrder,
         cancelOrder,
+        storeBatch,
+        releaseLot,
         navigate,
         generatePlan,
         applyScenario,

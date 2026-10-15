@@ -6,6 +6,10 @@ import { useApp } from '../store/AppContext';
 import type { Destination, InventoryBatch, Route } from '../data/dataset';
 import { EmptyState, FeasibilityBadge, formatINR, formatKg, formatPct, Spinner } from './shared';
 import { checkFeasibility } from '../engine/optimizer';
+import { storeVsShip } from '../engine/coldStorage';
+import { PlainWords, StockFlowBar, Term } from './explain/PlainWords';
+import { stockFlow } from './explain/stockFlow';
+import { planPoints } from './explain/narratives';
 
 function getUrgentBatches(batches: InventoryBatch[]) {
   return batches.filter((b) => b.remaining_shelf_life_hours <= 24).sort(
@@ -37,6 +41,10 @@ export const CommandSection: React.FC = () => {
   );
 
   const plan = state.optimized;
+  const flow = useMemo(
+    () => stockFlow(BATCHES, plan, storeVsShip(BATCHES, plan, destinations, state.lots)),
+    [BATCHES, plan, destinations, state.lots]
+  );
 
   return (
     <div className="page-wrapper">
@@ -64,6 +72,13 @@ export const CommandSection: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {plan && (
+        <div className="anim-fade-up">
+          <PlainWords topic="Today's dispatch plan overview" points={planPoints(plan, destinations, flow)} />
+          <StockFlowBar segments={flow} caption="Where today's stock goes" />
+        </div>
+      )}
 
       {/* Primary action banner */}
       <div className="action-banner anim-fade-up anim-fade-up-1">
@@ -122,7 +137,7 @@ export const CommandSection: React.FC = () => {
           <div className="card-meta">batches requiring immediate dispatch</div>
         </div>
         <div className="card card-sm">
-          <div className="card-title">Value at Risk</div>
+          <div className="card-title"><Term k="value at risk">Value at Risk</Term></div>
           <div className="card-value card-value-sm num text-danger">{formatINR(valueAtRisk)}</div>
           <div className="card-meta">acquisition cost of urgent stock</div>
         </div>
@@ -134,14 +149,14 @@ export const CommandSection: React.FC = () => {
         {plan && (
           <>
             <div className="card card-sm">
-              <div className="card-title">Net Revenue (Plan)</div>
+              <div className="card-title"><Term k="net revenue">Net Revenue (Plan)</Term></div>
               <div className="card-value card-value-sm num text-ready">
                 {formatINR(plan.metrics.net_revenue)}
               </div>
               <div className="card-meta">after acquisition & transport costs</div>
             </div>
             <div className="card card-sm">
-              <div className="card-title">Demand Fulfillment</div>
+              <div className="card-title"><Term k="fulfillment">Demand Fulfillment</Term></div>
               <div className="card-value card-value-sm num text-ready">
                 {formatPct(plan.metrics.fulfillment_rate)}
               </div>
